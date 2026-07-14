@@ -16,13 +16,8 @@
             height: 100vh;
             box-sizing: border-box;
         }
-        .header {
-            margin-bottom: 20px;
-        }
-        h2 {
-            margin-top: 0;
-            margin-bottom: 10px;
-        }
+        .header { margin-bottom: 20px; }
+        h2 { margin-top: 0; margin-bottom: 10px; }
         .description-box {
             background-color: #e0e7ff;
             color: #3730a3;
@@ -33,63 +28,25 @@
             border-left: 4px solid #4f46e5;
         }
         .container {
-            display: flex;
-            gap: 20px;
-            flex: 1;
-            min-height: 0;
-            margin-top: 15px;
+            display: flex; gap: 20px; flex: 1; min-height: 0; margin-top: 15px;
         }
-        .panel {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        
+        .panel { flex: 1; display: flex; flex-direction: column; }
         .editable-area {
-            flex: 1;
-            padding: 15px;
-            border: 1px solid #d4d4d8;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            background-color: white;
-            overflow-y: auto;
-            white-space: pre-wrap;
+            flex: 1; padding: 15px; border: 1px solid #d4d4d8; border-radius: 8px;
+            font-family: monospace; font-size: 14px; line-height: 1.5;
+            background-color: white; overflow-y: auto; white-space: pre-wrap;
         }
-        
         .editable-area:empty:before {
-            content: attr(data-placeholder);
-            color: #a1a1aa;
-            pointer-events: none;
+            content: attr(data-placeholder); color: #a1a1aa; pointer-events: none;
         }
-        
         textarea {
-            flex: 1;
-            resize: none;
-            padding: 15px;
-            border: 1px solid #d4d4d8;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 14px;
-            line-height: 1.5;
+            flex: 1; resize: none; padding: 15px; border: 1px solid #d4d4d8;
+            border-radius: 8px; font-family: monospace; font-size: 14px; line-height: 1.5;
         }
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            padding: 20px 0;
-        }
+        .controls { display: flex; justify-content: center; gap: 10px; padding: 20px 0; }
         button {
-            background-color: #2563eb;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s;
+            background-color: #2563eb; color: white; border: none; padding: 12px 24px;
+            border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s;
         }
         button:hover { background-color: #1d4ed8; }
         .btn-secondary { background-color: #10b981; }
@@ -103,8 +60,8 @@
         <h2>Script Cleaner</h2>
         <div class="description-box">
             <strong>What this does:</strong> Automatically resolves duplicate revision lines (keeps the bottom one), 
-            converts SFX tags based on detected languages (KR/JP/CN), strips out internal staff notes (TL/PR), 
-            and formats page markers properly. <em>Colors pasted from Google Docs will remain visible here for easy reviewing.</em>
+            converts multiple SFX formats based on detected languages (KR/JP/CN), strips out internal staff notes, 
+            and compacts page markers properly. <em>Colors pasted from Google Docs remain visible here for easy reviewing.</em>
         </div>
     </div>
 
@@ -124,7 +81,6 @@
         <button onclick="processText()">✨ Clean Script</button>
         <button class="btn-secondary" onclick="copyOutput()">📋 Copy Output</button>
     </div>
-    
     <div id="stats">Ready</div>
 
     <script>
@@ -132,19 +88,47 @@
             "TL/N FOR PR", "TL/N TO PR", "TL TO PR", "PR/N TO TL", "PR/N FOR TL"
         ];
 
+        // Capture EXACT clipboard data to bypass browser HTML formatting bugs
+        const inputDiv = document.getElementById('input');
+        inputDiv.addEventListener('paste', (e) => {
+            inputDiv.dataset.rawText = e.clipboardData.getData('text/plain');
+        });
+        inputDiv.addEventListener('input', () => {
+            inputDiv.dataset.rawText = inputDiv.innerText; // Fallback if user types manually
+        });
+
+        function isCJK(text) {
+            return /[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/.test(text);
+        }
+
+        function detectLang(text) {
+            if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
+            if (/[\u3040-\u30ff]/.test(text)) return "jsfx"; // Captures both Hiragana & Katakana
+            if (/[\u4e00-\u9fff]/.test(text)) return "csfx";
+            return "osfx";
+        }
+
         function getPrefix(line) {
             if (!line) return null;
-            // Catch tags with a colon (e.g. "SFX:", "“”: ")
-            if (line.includes(':')) {
-                return line.split(':')[0].trim().toUpperCase() + ':';
+
+            // SFX Format A: "SFX Orig: Trans"
+            let mA = line.match(/^(sfx\s+([^:]+?))\s*:/i);
+            if (mA) return mA[1].toUpperCase() + ":";
+
+            // SFX Format B: "SFX: Orig Trans" -> Tie the prefix to the original word so distinct SFX don't collapse!
+            let mB = line.match(/^(sfx\s*:)\s*(.*)/i);
+            if (mB) {
+                let firstWord = mB[2].trim().split(' ')[0];
+                if (isCJK(firstWord)) return (mB[1] + " " + firstWord).toUpperCase();
             }
-            // Catch punctuation tags without a colon (e.g. "“”", "<>", "()")
-            let m = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
-            if (m) return m[1];
+
+            if (line.includes(':')) return line.split(':')[0].trim().toUpperCase() + ':';
+
+            let m3 = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
+            if (m3) return m3[1];
             
-            // Catch alphanumeric tags without a colon (e.g. "SFX", "ST")
-            m = line.match(/^(SFX|ST|NA)\b/i);
-            if (m) return m[1].toUpperCase();
+            let m4 = line.match(/^(SFX|ST|NA)\b/i);
+            if (m4) return m4[1].toUpperCase();
             
             return null;
         }
@@ -159,77 +143,77 @@
             return l.includes("page") || l.includes(".png");
         }
 
-        function detectLang(text) {
-            if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
-            if (/[\u3040-\u30ff]/.test(text)) return "jsfx";
-            if (/[\u4e00-\u9fff]/.test(text)) return "csfx";
-            return "osfx";
-        }
-
         function convertSfx(line) {
             if (!line.toLowerCase().startsWith("sfx")) return null;
-            // Matches: sfx [Original] : [Translation]
-            let m = line.match(/^sfx\s+(.*?)\s*:\s*(.*)/i);
-            if (!m) return null; // Skips regular English SFX safely
-            
-            let original = m[1].trim();
-            let translation = m[2].trim();
-            
-            if (!original) return null;
-            
-            let tag = detectLang(original);
-            return [`${tag}: ${original}`, `sfx:  ${translation}`];
+
+            // Format A: SFX Orig: Trans
+            let mA = line.match(/^sfx\s+([^:]+?)\s*:\s*(.*)/i);
+            if (mA && isCJK(mA[1])) {
+                let original = mA[1].trim();
+                return [`${detectLang(original)}: ${original}`, `sfx:  ${mA[2].trim()}`];
+            }
+
+            // Format B: SFX: Orig Trans (Splits gracefully without breaking '2x' multipliers)
+            let mB = line.match(/^sfx\s*:\s*(.*)/i);
+            if (mB) {
+                let parts = mB[1].split(' ');
+                let origParts = [], transParts = [], inOrig = true;
+
+                for (let p of parts) {
+                    if (!p) continue;
+                    // Switch to translation if word has letters AND isn't a multiplier like "2x"
+                    if (inOrig && /[a-zA-Z]/.test(p) && !/^\d*x$/i.test(p)) inOrig = false;
+                    
+                    if (inOrig) origParts.push(p);
+                    else transParts.push(p);
+                }
+
+                if (origParts.length > 0 && transParts.length > 0) {
+                    let original = origParts.join(' ');
+                    if (isCJK(original)) {
+                        return [`${detectLang(original)}: ${original}`, `sfx:  ${transParts.join(' ')}`];
+                    }
+                }
+            }
+            return null; // Passes through English SFX exactly as is
         }
 
         function processText() {
-            const rawText = document.getElementById('input').innerText;
+            const rawText = inputDiv.dataset.rawText || inputDiv.innerText;
+            const lines = rawText.split(/\r?\n/).map(l => l.replace(/[\u00A0\u200B]/g, ' ').trim());
             
-            // CRITICAL FIX: Split the text, scrub out invisible Google Docs formatting spaces,
-            // and completely remove all blank lines before the logic loops.
-            const lines = rawText.split(/\r?\n/)
-                .map(l => l.replace(/[\u00A0\u200B]/g, ' ').trim()) 
-                .filter(l => l.length > 0);
-
             let out = [];
             let stats = { kept: 0, revisions: 0, notes: 0, sfx: 0 };
 
             for (let i = 0; i < lines.length; i++) {
                 let stripped = lines[i];
 
-                // 1. PAGE BREAKS
-                if (isPage(stripped)) {
-                    // Ensure one blank line before page tags
-                    if (out.length > 0 && out[out.length - 1] !== "") {
-                        out.push("");
-                    }
-                    out.push(stripped);
+                // Preserve structural blank lines during processing so separate bubbles aren't collapsed
+                if (!stripped) {
+                    out.push("");
                     continue;
                 }
 
-                // 2. REMOVE NOTES
                 if (isNote(stripped)) {
                     stats.notes++;
                     continue;
                 }
 
-                // 3. REVISION RULE
                 let isRevision = false;
                 if (i + 1 < lines.length) {
                     let nextLine = lines[i + 1];
-                    let currPrefix = getPrefix(stripped);
-                    let nextPrefix = getPrefix(nextLine);
-                    
-                    if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
-                        stats.revisions++;
-                        isRevision = true;
+                    if (nextLine) { // Revisions must be directly consecutive!
+                        let currPrefix = getPrefix(stripped);
+                        let nextPrefix = getPrefix(nextLine);
+                        if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
+                            stats.revisions++;
+                            isRevision = true;
+                        }
                     }
                 }
 
-                if (isRevision) {
-                    continue; // Skip the older version, loop moves to the next line
-                }
+                if (isRevision) continue; // Skip to keep the newer version below it
 
-                // 4. SFX CONVERSION
                 let sfxLines = convertSfx(stripped);
                 if (sfxLines) {
                     out.push(...sfxLines);
@@ -237,12 +221,21 @@
                     continue;
                 }
 
-                // 5. KEEP REGULAR TEXT
                 out.push(stripped);
                 stats.kept++;
             }
 
-            document.getElementById('output').value = out.join('\n');
+            // Clean Formatting Rule: Strip all blank lines, then inject ONE before each Page Marker
+            let compactOut = out.filter(l => l !== "");
+            let finalOut = [];
+            for (let j = 0; j < compactOut.length; j++) {
+                if (j > 0 && isPage(compactOut[j])) {
+                    finalOut.push("");
+                }
+                finalOut.push(compactOut[j]);
+            }
+
+            document.getElementById('output').value = finalOut.join('\n');
             document.getElementById('stats').innerText = 
                 `Processed! Revisions fixed: ${stats.revisions} | Notes removed: ${stats.notes} | SFX converted: ${stats.sfx}`;
         }
