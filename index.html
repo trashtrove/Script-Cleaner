@@ -45,7 +45,6 @@
             flex-direction: column;
         }
         
-        /* The new rich-text input area */
         .editable-area {
             flex: 1;
             padding: 15px;
@@ -56,10 +55,9 @@
             line-height: 1.5;
             background-color: white;
             overflow-y: auto;
-            white-space: pre-wrap; /* Preserves spacing */
+            white-space: pre-wrap;
         }
         
-        /* Placeholder text for the editable div */
         .editable-area:empty:before {
             content: attr(data-placeholder);
             color: #a1a1aa;
@@ -96,7 +94,7 @@
         button:hover { background-color: #1d4ed8; }
         .btn-secondary { background-color: #10b981; }
         .btn-secondary:hover { background-color: #059669; }
-        #stats { font-size: 14px; color: #71717a; margin-top: 10px; text-align: center; }
+        #stats { font-size: 14px; color: #71717a; margin-top: 10px; text-align: center; font-weight: 500;}
     </style>
 </head>
 <body>
@@ -113,7 +111,6 @@
     <div class="container">
         <div class="panel">
             <label style="margin-bottom: 8px; font-weight: bold;">Paste Original Script here:</label>
-            <!-- Changed from textarea to a contenteditable div to support rich text (colors) -->
             <div id="input" class="editable-area" contenteditable="true" data-placeholder="Paste from Google Docs with colors intact..."></div>
         </div>
         
@@ -137,12 +134,15 @@
 
         function getPrefix(line) {
             if (!line) return null;
+            // Catch tags with a colon (e.g. "SFX:", "“”: ")
             if (line.includes(':')) {
                 return line.split(':')[0].trim().toUpperCase() + ':';
             }
+            // Catch punctuation tags without a colon (e.g. "“”", "<>", "()")
             let m = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
             if (m) return m[1];
             
+            // Catch alphanumeric tags without a colon (e.g. "SFX", "ST")
             m = line.match(/^(SFX|ST|NA)\b/i);
             if (m) return m[1].toUpperCase();
             
@@ -168,8 +168,9 @@
 
         function convertSfx(line) {
             if (!line.toLowerCase().startsWith("sfx")) return null;
+            // Matches: sfx [Original] : [Translation]
             let m = line.match(/^sfx\s+(.*?)\s*:\s*(.*)/i);
-            if (!m) return null;
+            if (!m) return null; // Skips regular English SFX safely
             
             let original = m[1].trim();
             let translation = m[2].trim();
@@ -181,79 +182,67 @@
         }
 
         function processText() {
-            // Using innerText extracts plain text with correct line breaks, dropping the HTML colors
-            const text = document.getElementById('input').innerText;
-            const lines = text.split(/\r?\n/);
+            const rawText = document.getElementById('input').innerText;
+            
+            // CRITICAL FIX: Split the text, scrub out invisible Google Docs formatting spaces,
+            // and completely remove all blank lines before the logic loops.
+            const lines = rawText.split(/\r?\n/)
+                .map(l => l.replace(/[\u00A0\u200B]/g, ' ').trim()) 
+                .filter(l => l.length > 0);
+
             let out = [];
-            let i = 0;
             let stats = { kept: 0, revisions: 0, notes: 0, sfx: 0 };
 
-            while (i < lines.length) {
-                let stripped = lines[i].trim();
+            for (let i = 0; i < lines.length; i++) {
+                let stripped = lines[i];
 
-                if (!stripped) {
-                    i++;
-                    continue;
-                }
-
+                // 1. PAGE BREAKS
                 if (isPage(stripped)) {
+                    // Ensure one blank line before page tags
                     if (out.length > 0 && out[out.length - 1] !== "") {
                         out.push("");
                     }
                     out.push(stripped);
-                    i++;
                     continue;
                 }
 
+                // 2. REMOVE NOTES
                 if (isNote(stripped)) {
                     stats.notes++;
-                    i++;
                     continue;
                 }
 
+                // 3. REVISION RULE
                 let isRevision = false;
                 if (i + 1 < lines.length) {
-                    let nextLine = lines[i + 1].trim();
-                    if (nextLine) {
-                        let currPrefix = getPrefix(stripped);
-                        let nextPrefix = getPrefix(nextLine);
-                        if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
-                            stats.revisions++;
-                            isRevision = true;
-                        }
+                    let nextLine = lines[i + 1];
+                    let currPrefix = getPrefix(stripped);
+                    let nextPrefix = getPrefix(nextLine);
+                    
+                    if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
+                        stats.revisions++;
+                        isRevision = true;
                     }
                 }
 
                 if (isRevision) {
-                    i++;
-                    continue;
+                    continue; // Skip the older version, loop moves to the next line
                 }
 
+                // 4. SFX CONVERSION
                 let sfxLines = convertSfx(stripped);
                 if (sfxLines) {
                     out.push(...sfxLines);
                     stats.sfx++;
-                    i++;
                     continue;
                 }
 
+                // 5. KEEP REGULAR TEXT
                 out.push(stripped);
                 stats.kept++;
-                i++;
             }
 
-            let finalOut = [];
-            for (let j = 0; j < out.length; j++) {
-                if (out[j] === "") {
-                    if (j + 1 < out.length && isPage(out[j + 1])) {
-                        finalOut.push(out[j]);
-                    }
-                } else {
-                    finalOut.push(out[j]);
-                }
-            }
-
-            document.getElementById('output').value = finalOut.join('\n');
+            document.getElementById('output').value = out.join('\n');
             document.getElementById('stats').innerText = 
                 `Processed! Revisions fixed: ${stats.revisions} | Notes removed: ${stats.notes} | SFX converted: ${stats.sfx}`;
         }
