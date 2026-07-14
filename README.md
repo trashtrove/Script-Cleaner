@@ -1,4 +1,4 @@
-Okay to all my typesetters out there that use TypeR or just I guess just TS-ers in general, I made a website and some code that should edit PR-ed scripts into a simple consistent set up. This has been an on-going mini project I've been working on and I think she's finally useable enough. That being said, there will obv be some kinks and bugs to work out, so if you encounter any of them let me know. Or if you've got a suggestion/feature addition~
+Okay to all my typesetters out there that use TypeR or I guess just TS-ers in general, I made a website and some code that should edit PR-ed scripts into a simple consistent setup. This has been an ongoing mini project I've been working on and I think she's finally usable enough. That being said, there will obv be some kinks and bugs to work out, so if you encounter any of them, let me know. Or if you've got a suggestion/feature addition~
 
 Here's what it does organized by category:
 1. Clean-up and formatting.
