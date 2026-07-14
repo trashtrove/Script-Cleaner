@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanlation Script Cleaner</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #f4f4f5;
+            color: #18181b;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        textarea {
+            flex: 1;
+            resize: none;
+            padding: 15px;
+            border: 1px solid #d4d4d8;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px 0;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #1d4ed8; }
+        .btn-secondary { background-color: #10b981; }
+        .btn-secondary:hover { background-color: #059669; }
+        #stats { font-size: 14px; color: #71717a; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>Script Cleaner</h2>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <label for="input" style="margin-bottom: 8px; font-weight: bold;">Paste Original Script here:</label>
+            <textarea id="input" placeholder="Paste from Google Docs..."></textarea>
+        </div>
+        
+        <div class="panel">
+            <label for="output" style="margin-bottom: 8px; font-weight: bold;">Cleaned Output:</label>
+            <textarea id="output" readonly placeholder="Cleaned text will appear here..."></textarea>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button onclick="processText()">✨ Clean Script</button>
+        <button class="btn-secondary" onclick="copyOutput()">📋 Copy Output</button>
+    </div>
+    
+    <div id="stats">Ready</div>
+
+    <script>
+        const REMOVE_PREFIXES = [
+            "TL/N FOR PR", "TL/N TO PR", "TL TO PR", "PR/N TO TL", "PR/N FOR TL"
+        ];
+
+        function getPrefix(line) {
+            if (!line) return null;
+            if (line.includes(':')) {
+                return line.split(':')[0].trim().toUpperCase() + ':';
+            }
+            let m = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
+            if (m) return m[1];
+            
+            m = line.match(/^(SFX|ST|NA)\b/i);
+            if (m) return m[1].toUpperCase();
+            
+            return null;
+        }
+
+        function isNote(line) {
+            let n = line.toUpperCase();
+            return REMOVE_PREFIXES.some(p => n.startsWith(p));
+        }
+
+        function isPage(line) {
+            let l = line.toLowerCase();
+            return l.includes("page") || l.includes(".png");
+        }
+
+        function detectLang(text) {
+            if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
+            if (/[\u3040-\u30ff]/.test(text)) return "jsfx";
+            if (/[\u4e00-\u9fff]/.test(text)) return "csfx";
+            return "osfx";
+        }
+
+        function convertSfx(line) {
+            if (!line.toLowerCase().startsWith("sfx")) return null;
+            let m = line.match(/^sfx\s+(.*?)\s*:\s*(.*)/i);
+            if (!m) return null;
+            
+            let original = m[1].trim();
+            let translation = m[2].trim();
+            
+            if (!original) return null;
+            
+            let tag = detectLang(original);
+            return [`${tag}: ${original}`, `sfx:  ${translation}`];
+        }
+
+        function processText() {
+            const text = document.getElementById('input').value;
+            const lines = text.split(/\r?\n/);
+            let out = [];
+            let i = 0;
+            let stats = { kept: 0, revisions: 0, notes: 0, sfx: 0 };
+
+            while (i < lines.length) {
+                let stripped = lines[i].trim();
+
+                if (!stripped) {
+                    i++;
+                    continue;
+                }
+
+                if (isPage(stripped)) {
+                    if (out.length > 0 && out[out.length - 1] !== "") {
+                        out.push("");
+                    }
+                    out.push(stripped);
+                    i++;
+                    continue;
+                }
+
+                if (isNote(stripped)) {
+                    stats.notes++;
+                    i++;
+                    continue;
+                }
+
+                let isRevision = false;
+                if (i + 1 < lines.length) {
+                    let nextLine = lines[i + 1].trim();
+                    if (nextLine) {
+                        let currPrefix = getPrefix(stripped);
+                        let nextPrefix = getPrefix(nextLine);
+                        if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
+                            stats.revisions++;
+                            isRevision = true;
+                        }
+                    }
+                }
+
+                if (isRevision) {
+                    i++;
+                    continue;
+                }
+
+                let sfxLines = convertSfx(stripped);
+                if (sfxLines) {
+                    out.push(...sfxLines);
+                    stats.sfx++;
+                    i++;
+                    continue;
+                }
+
+                out.push(stripped);
+                stats.kept++;
+                i++;
+            }
+
+            let finalOut = [];
+            for (let j = 0; j < out.length; j++) {
+                if (out[j] === "") {
+                    if (j + 1 < out.length && isPage(out[j + 1])) {
+                        finalOut.push(out[j]);
+                    }
+                } else {
+                    finalOut.push(out[j]);
+                }
+            }
+
+            document.getElementById('output').value = finalOut.join('\n');
+            document.getElementById('stats').innerText = 
+                `Processed! Revisions fixed: ${stats.revisions} | Notes removed: ${stats.notes} | SFX converted: ${stats.sfx}`;
+        }
+
+        function copyOutput() {
+            const output = document.getElementById('output');
+            output.select();
+            document.execCommand('copy');
+            const btn = document.querySelector('.btn-secondary');
+            btn.innerText = "✓ Copied!";
+            setTimeout(() => btn.innerText = "📋 Copy Output", 2000);
+        }
+    </script>
+</body>
+</html>
