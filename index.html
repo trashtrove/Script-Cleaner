@@ -42,8 +42,9 @@
         textarea {
             flex: 1; resize: none; padding: 15px; border: 1px solid #d4d4d8;
             border-radius: 8px; font-family: monospace; font-size: 14px; line-height: 1.5;
+            background-color: #f8fafc;
         }
-        .controls { display: flex; justify-content: center; gap: 10px; padding: 20px 0; }
+        .controls { display: flex; justify-content: center; gap: 10px; padding: 15px 0 5px 0; }
         button {
             background-color: #2563eb; color: white; border: none; padding: 12px 24px;
             border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s;
@@ -51,7 +52,43 @@
         button:hover { background-color: #1d4ed8; }
         .btn-secondary { background-color: #10b981; }
         .btn-secondary:hover { background-color: #059669; }
-        #stats { font-size: 14px; color: #71717a; margin-top: 10px; text-align: center; font-weight: 500;}
+        
+        /* New Smart Review UI Styles */
+        .resolver-container {
+            display: none;
+            background: white;
+            border: 2px solid #fbbf24;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            max-height: 250px;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .resolver-title {
+            font-weight: bold; color: #b45309; margin-bottom: 10px; font-size: 15px;
+        }
+        .conflict-group {
+            margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;
+        }
+        .conflict-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .conflict-label {
+            font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 6px;
+        }
+        .toggle-btn {
+            padding: 8px 12px; margin: 4px 0; border-radius: 6px; border: 2px solid #cbd5e1;
+            cursor: pointer; background: #f8fafc; color: #64748b; font-family: monospace;
+            transition: all 0.15s ease; position: relative; padding-left: 35px;
+        }
+        .toggle-btn::before {
+            content: '❌'; position: absolute; left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);
+        }
+        .toggle-btn.active {
+            background: #ecfdf5; border-color: #10b981; color: #065f46; font-weight: bold;
+        }
+        .toggle-btn.active::before {
+            content: '✅';
+        }
     </style>
 </head>
 <body>
@@ -59,9 +96,9 @@
     <div class="header">
         <h2>Nocti's Script Cleaner</h2>
         <div class="description-box">
-            <strong>What this does:</strong> Automatically resolves duplicate revision lines (keeps the newest one), 
-            converts multiple SFX formats based on detected languages (KR/JP/CN), strips out internal staff notes, 
-            and compacts page markers properly. If you encounter any issues, DM me~ <em>Colors pasted from Google Docs remain visible here for easy reviewing.</em>
+            <strong>What this does:</strong> Identifies and formats languages automatically, strips staff notes, and detects revisions. 
+            If it finds consecutive lines of the same type (like back-to-back SFX or dialogue), it groups them in a menu below so you can <strong>click to choose which lines to keep</strong>.
+            <em>If you encounter any issues, DM me~</em>
         </div>
     </div>
 
@@ -73,21 +110,24 @@
         
         <div class="panel">
             <label for="output" style="margin-bottom: 8px; font-weight: bold;">Cleaned Output (Ready for Typesetting):</label>
+            <div id="resolver" class="resolver-container"></div>
             <textarea id="output" readonly placeholder="Cleaned plain text will appear here..."></textarea>
         </div>
     </div>
 
     <div class="controls">
-        <button onclick="processText()">✨ Clean Script</button>
+        <button onclick="processScript()">✨ Clean & Analyze Script</button>
         <button class="btn-secondary" onclick="copyOutput()">📋 Copy Output</button>
     </div>
-    <div id="stats">Ready</div>
 
     <script>
         const REMOVE_PREFIXES = [
             "TL/N FOR PR", "TL/N TO PR", "TL TO PR", "PR/N TO TL", "PR/N FOR TL"
         ];
 
+        let globalItems = [];
+
+        // Capture EXACT clipboard data
         const inputDiv = document.getElementById('input');
         inputDiv.addEventListener('paste', (e) => {
             inputDiv.dataset.rawText = e.clipboardData.getData('text/plain');
@@ -96,39 +136,22 @@
             inputDiv.dataset.rawText = inputDiv.innerText;
         });
 
-        function isCJK(text) {
-            return /[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/.test(text);
-        }
-
+        function isCJK(text) { return /[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/.test(text); }
         function detectLang(text) {
             if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
-            if (/[\u3040-\u30ff]/.test(text)) return "jsfx";
+            if (/[\u3040-\u30ff]/.test(text)) return "jsfx"; 
             if (/[\u4e00-\u9fff]/.test(text)) return "csfx";
             return "osfx";
         }
 
-        function getPrefix(line) {
-            if (!line) return null;
-
-            // SFX Format A: "SFX Orig: Trans"
-            let mA = line.match(/^([kjco]?sfx\s+([^:]+?))\s*:/i);
-            if (mA) return mA[1].trim().toUpperCase() + ":";
-
-            // SFX Format B: "SFX: Orig Trans" -> Tie prefix to CJK word
-            let mB = line.match(/^([kjco]?sfx\s*:?)\s*(.*)/i);
-            if (mB) {
-                let firstWord = mB[2].trim().split(' ')[0];
-                if (isCJK(firstWord)) return ("SFX: " + firstWord).toUpperCase();
-            }
-
-            if (line.includes(':')) return line.split(':')[0].trim().toUpperCase() + ':';
-
-            let m3 = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
-            if (m3) return m3[1];
-            
-            let m4 = line.match(/^(SFX|ST|NA)\b/i);
-            if (m4) return m4[1].toUpperCase();
-            
+        // Extracts just the base symbol ("SFX", "ST", "“”", "[]") to know what type of line it is
+        function getBasePrefix(line) {
+            let upper = line.toUpperCase();
+            if (upper.startsWith("SFX")) return "SFX";
+            if (upper.startsWith("ST")) return "ST";
+            if (upper.startsWith("NA")) return "NA";
+            let m = line.match(/^([“”"'\[\]{}()<>*/#]+)/);
+            if (m) return m[1];
             return null;
         }
 
@@ -142,47 +165,35 @@
             return l.includes("page") || l.includes(".png");
         }
 
-        // Checks if two lines share enough word overlap to be revisions of the same dialogue bubble
-        function areLinesSimilar(text1, text2) {
-            let clean1 = text1.replace(/^[^:]*:/, '').replace(/[^\w\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/g, ' ').toLowerCase().trim();
-            let clean2 = text2.replace(/^[^:]*:/, '').replace(/[^\w\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/g, ' ').toLowerCase().trim();
+        // Compares words to see if two lines are just revisions of each other
+        function getSimilarity(str1, str2) {
+            let words1 = str1.toLowerCase().match(/\b[a-z0-9]+\b/g) || [];
+            let words2 = str2.toLowerCase().match(/\b[a-z0-9]+\b/g) || [];
+            if (words1.length === 0 || words2.length === 0) return 0;
             
-            if (clean1 === clean2) return true;
-            
-            let words1 = clean1.split(/\s+/).filter(w => w.length > 0);
-            let words2 = clean2.split(/\s+/).filter(w => w.length > 0);
-            if (words1.length === 0 || words2.length === 0) return false;
-            
-            let set2 = new Set(words2);
-            let sharedCount = words1.filter(w => set2.has(w)).length;
-            let minLen = Math.min(words1.length, words2.length);
-            
-            return (sharedCount / minLen) >= 0.5; // At least 50% word overlap
-        }
-
-        // Look ahead past empty lines and staff notes to find the next active script line
-        function getNextActiveLineIndex(lines, currentIndex) {
-            for (let k = currentIndex + 1; k < lines.length; k++) {
-                let trimmed = lines[k];
-                if (!trimmed) continue;
-                if (isNote(trimmed)) continue;
-                return k;
+            let matchCount = 0;
+            let temp2 = [...words2];
+            for (let w of words1) {
+                let idx = temp2.indexOf(w);
+                if (idx !== -1) {
+                    matchCount++;
+                    temp2.splice(idx, 1);
+                }
             }
-            return -1;
+            let maxLen = Math.max(words1.length, words2.length);
+            return matchCount / maxLen;
         }
 
         function convertSfx(line) {
-            if (!/^[kjco]?sfx/i.test(line)) return null;
+            if (!line.toLowerCase().startsWith("sfx")) return null;
 
-            // Format A: SFX Orig: Trans
-            let mA = line.match(/^[kjco]?sfx\s+([^:]+?)\s*:\s*(.*)/i);
+            let mA = line.match(/^sfx\s+([^:]+?)\s*:\s*(.*)/i);
             if (mA && isCJK(mA[1])) {
                 let original = mA[1].trim();
-                return [`${detectLang(original)}: ${original}`, `sfx: ${mA[2].trim()}`];
+                return [`${detectLang(original)}: ${original}`, `sfx:  ${mA[2].trim()}`];
             }
 
-            // Format B: SFX: Orig Trans
-            let mB = line.match(/^[kjco]?sfx\s*:?\s*(.*)/i);
+            let mB = line.match(/^sfx\s*:\s*(.*)/i);
             if (mB) {
                 let parts = mB[1].split(' ');
                 let origParts = [], transParts = [], inOrig = true;
@@ -198,76 +209,118 @@
                 if (origParts.length > 0 && transParts.length > 0) {
                     let original = origParts.join(' ');
                     if (isCJK(original)) {
-                        return [`${detectLang(original)}: ${original}`, `sfx: ${transParts.join(' ')}`];
+                        return [`${detectLang(original)}: ${original}`, `sfx:  ${transParts.join(' ')}`];
                     }
                 }
             }
-            return null;
+            return null; 
         }
 
-        function processText() {
+        function processScript() {
             const rawText = inputDiv.dataset.rawText || inputDiv.innerText;
             const lines = rawText.split(/\r?\n/).map(l => l.replace(/[\u00A0\u200B]/g, ' ').trim());
             
-            let out = [];
-            let stats = { kept: 0, revisions: 0, notes: 0, sfx: 0 };
+            globalItems = [];
+            let currentGroup = null;
 
+            // Phase 1: Group lines by their base prefix
             for (let i = 0; i < lines.length; i++) {
                 let stripped = lines[i];
 
-                if (!stripped) {
-                    out.push("");
+                if (!stripped) continue;
+
+                if (isPage(stripped)) {
+                    globalItems.push({ type: 'page', text: stripped });
+                    currentGroup = null; // break the group
                     continue;
                 }
 
-                if (isNote(stripped)) {
-                    stats.notes++;
-                    continue;
-                }
+                if (isNote(stripped)) continue;
 
-                // Look-ahead revision check
-                let isRevision = false;
-                let nextIdx = getNextActiveLineIndex(lines, i);
-                if (nextIdx !== -1) {
-                    let nextLine = lines[nextIdx];
-                    let currPrefix = getPrefix(stripped);
-                    let nextPrefix = getPrefix(nextLine);
-                    
-                    if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
-                        // Revisions must share CJK characters (SFX) OR share significant text overlap (Dialogue)
-                        if (/^(SFX|KSFX|JSFX|CSFX)/i.test(currPrefix) || areLinesSimilar(stripped, nextLine)) {
-                            stats.revisions++;
-                            isRevision = true;
+                let prefix = getBasePrefix(stripped);
+
+                if (currentGroup && prefix && currentGroup.prefix === prefix) {
+                    currentGroup.lines.push({ text: stripped, selected: true });
+                } else {
+                    currentGroup = { type: 'group', prefix: prefix || 'TEXT', lines: [{ text: stripped, selected: true }] };
+                    globalItems.push(currentGroup);
+                }
+            }
+
+            // Phase 2: Smart Pre-selection
+            for (let item of globalItems) {
+                if (item.type === 'group' && item.lines.length > 1) {
+                    for (let i = 0; i < item.lines.length - 1; i++) {
+                        // If a line is >25% similar to the NEXT line in the group, it's likely a typo revision. Turn the older one OFF.
+                        if (getSimilarity(item.lines[i].text, item.lines[i+1].text) > 0.25) {
+                            item.lines[i].selected = false;
                         }
                     }
                 }
-
-                if (isRevision) continue; // Skip older revision
-
-                let sfxLines = convertSfx(stripped);
-                if (sfxLines) {
-                    out.push(...sfxLines);
-                    stats.sfx++;
-                    continue;
-                }
-
-                out.push(stripped);
-                stats.kept++;
             }
 
-            // Clean formatting: strip empty lines, then inject ONE before each Page Marker
-            let compactOut = out.filter(l => l !== "");
-            let finalOut = [];
-            for (let j = 0; j < compactOut.length; j++) {
-                if (j > 0 && isPage(compactOut[j])) {
-                    finalOut.push("");
+            renderResolver();
+            renderOutput();
+        }
+
+        // Phase 3: Build the Interactive UI for groups with multiple lines
+        function renderResolver() {
+            let container = document.getElementById('resolver');
+            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle which lines to keep</div>';
+            let hasConflicts = false;
+
+            for (let item of globalItems) {
+                if (item.type === 'group' && item.lines.length > 1) {
+                    hasConflicts = true;
+                    let groupDiv = document.createElement('div');
+                    groupDiv.className = 'conflict-group';
+                    
+                    let label = document.createElement('div');
+                    label.className = 'conflict-label';
+                    label.innerText = `Tag Group: ${item.prefix}`;
+                    groupDiv.appendChild(label);
+
+                    for (let lineObj of item.lines) {
+                        let btn = document.createElement('div');
+                        btn.className = `toggle-btn ${lineObj.selected ? 'active' : ''}`;
+                        btn.innerText = lineObj.text;
+                        btn.onclick = () => {
+                            lineObj.selected = !lineObj.selected; // Toggle state
+                            renderResolver(); // Refresh buttons
+                            renderOutput();   // Live update output
+                        };
+                        groupDiv.appendChild(btn);
+                    }
+                    container.appendChild(groupDiv);
                 }
-                finalOut.push(compactOut[j]);
             }
 
-            document.getElementById('output').value = finalOut.join('\n');
-            document.getElementById('stats').innerText = 
-                `Processed! Revisions fixed: ${stats.revisions} | Notes removed: ${stats.notes} | SFX converted: ${stats.sfx}`;
+            container.style.display = hasConflicts ? 'block' : 'none';
+        }
+
+        // Phase 4: Generate the final cleaned text based on what is toggled ON
+        function renderOutput() {
+            let out = [];
+
+            for (let item of globalItems) {
+                if (item.type === 'page') {
+                    if (out.length > 0) out.push(""); // One blank line before pages
+                    out.push(item.text);
+                } else if (item.type === 'group') {
+                    for (let lineObj of item.lines) {
+                        if (lineObj.selected) {
+                            let sfxLines = convertSfx(lineObj.text);
+                            if (sfxLines) {
+                                out.push(...sfxLines);
+                            } else {
+                                out.push(lineObj.text);
+                            }
+                        }
+                    }
+                }
+            }
+
+            document.getElementById('output').value = out.join('\n');
         }
 
         function copyOutput() {
