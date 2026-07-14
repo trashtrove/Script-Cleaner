@@ -57,11 +57,11 @@
 <body>
 
     <div class="header">
-        <h2>Nocti's Script Cleaner</h2>
+        <h2>Script Cleaner</h2>
         <div class="description-box">
-            <strong>What this does:</strong> Automatically resolves duplicate revision lines (keeps the bottom one), 
+            <strong>What this does:</strong> Automatically resolves duplicate revision lines (keeps the newest one), 
             converts multiple SFX formats based on detected languages (KR/JP/CN), strips out internal staff notes, 
-            and compacts page markers properly. If you encoutner an issue, DM me~ <em>Colors pasted from Google Docs remain visible here for easy reviewing.</em>
+            and compacts page markers properly. <em>Colors pasted from Google Docs remain visible here for easy reviewing.</em>
         </div>
     </div>
 
@@ -88,13 +88,12 @@
             "TL/N FOR PR", "TL/N TO PR", "TL TO PR", "PR/N TO TL", "PR/N FOR TL"
         ];
 
-        // Capture EXACT clipboard data to bypass browser HTML formatting bugs
         const inputDiv = document.getElementById('input');
         inputDiv.addEventListener('paste', (e) => {
             inputDiv.dataset.rawText = e.clipboardData.getData('text/plain');
         });
         inputDiv.addEventListener('input', () => {
-            inputDiv.dataset.rawText = inputDiv.innerText; // Fallback if user types manually
+            inputDiv.dataset.rawText = inputDiv.innerText;
         });
 
         function isCJK(text) {
@@ -103,7 +102,7 @@
 
         function detectLang(text) {
             if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
-            if (/[\u3040-\u30ff]/.test(text)) return "jsfx"; // Captures both Hiragana & Katakana
+            if (/[\u3040-\u30ff]/.test(text)) return "jsfx";
             if (/[\u4e00-\u9fff]/.test(text)) return "csfx";
             return "osfx";
         }
@@ -112,14 +111,14 @@
             if (!line) return null;
 
             // SFX Format A: "SFX Orig: Trans"
-            let mA = line.match(/^(sfx\s+([^:]+?))\s*:/i);
-            if (mA) return mA[1].toUpperCase() + ":";
+            let mA = line.match(/^([kjco]?sfx\s+([^:]+?))\s*:/i);
+            if (mA) return mA[1].trim().toUpperCase() + ":";
 
-            // SFX Format B: "SFX: Orig Trans" -> Tie the prefix to the original word so distinct SFX don't collapse!
-            let mB = line.match(/^(sfx\s*:)\s*(.*)/i);
+            // SFX Format B: "SFX: Orig Trans" -> Tie prefix to CJK word
+            let mB = line.match(/^([kjco]?sfx\s*:?)\s*(.*)/i);
             if (mB) {
                 let firstWord = mB[2].trim().split(' ')[0];
-                if (isCJK(firstWord)) return (mB[1] + " " + firstWord).toUpperCase();
+                if (isCJK(firstWord)) return ("SFX: " + firstWord).toUpperCase();
             }
 
             if (line.includes(':')) return line.split(':')[0].trim().toUpperCase() + ':';
@@ -143,25 +142,53 @@
             return l.includes("page") || l.includes(".png");
         }
 
+        // Checks if two lines share enough word overlap to be revisions of the same dialogue bubble
+        function areLinesSimilar(text1, text2) {
+            let clean1 = text1.replace(/^[^:]*:/, '').replace(/[^\w\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/g, ' ').toLowerCase().trim();
+            let clean2 = text2.replace(/^[^:]*:/, '').replace(/[^\w\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/g, ' ').toLowerCase().trim();
+            
+            if (clean1 === clean2) return true;
+            
+            let words1 = clean1.split(/\s+/).filter(w => w.length > 0);
+            let words2 = clean2.split(/\s+/).filter(w => w.length > 0);
+            if (words1.length === 0 || words2.length === 0) return false;
+            
+            let set2 = new Set(words2);
+            let sharedCount = words1.filter(w => set2.has(w)).length;
+            let minLen = Math.min(words1.length, words2.length);
+            
+            return (sharedCount / minLen) >= 0.5; // At least 50% word overlap
+        }
+
+        // Look ahead past empty lines and staff notes to find the next active script line
+        function getNextActiveLineIndex(lines, currentIndex) {
+            for (let k = currentIndex + 1; k < lines.length; k++) {
+                let trimmed = lines[k];
+                if (!trimmed) continue;
+                if (isNote(trimmed)) continue;
+                return k;
+            }
+            return -1;
+        }
+
         function convertSfx(line) {
-            if (!line.toLowerCase().startsWith("sfx")) return null;
+            if (!/^[kjco]?sfx/i.test(line)) return null;
 
             // Format A: SFX Orig: Trans
-            let mA = line.match(/^sfx\s+([^:]+?)\s*:\s*(.*)/i);
+            let mA = line.match(/^[kjco]?sfx\s+([^:]+?)\s*:\s*(.*)/i);
             if (mA && isCJK(mA[1])) {
                 let original = mA[1].trim();
-                return [`${detectLang(original)}: ${original}`, `sfx:  ${mA[2].trim()}`];
+                return [`${detectLang(original)}: ${original}`, `sfx: ${mA[2].trim()}`];
             }
 
-            // Format B: SFX: Orig Trans (Splits gracefully without breaking '2x' multipliers)
-            let mB = line.match(/^sfx\s*:\s*(.*)/i);
+            // Format B: SFX: Orig Trans
+            let mB = line.match(/^[kjco]?sfx\s*:?\s*(.*)/i);
             if (mB) {
                 let parts = mB[1].split(' ');
                 let origParts = [], transParts = [], inOrig = true;
 
                 for (let p of parts) {
                     if (!p) continue;
-                    // Switch to translation if word has letters AND isn't a multiplier like "2x"
                     if (inOrig && /[a-zA-Z]/.test(p) && !/^\d*x$/i.test(p)) inOrig = false;
                     
                     if (inOrig) origParts.push(p);
@@ -171,11 +198,11 @@
                 if (origParts.length > 0 && transParts.length > 0) {
                     let original = origParts.join(' ');
                     if (isCJK(original)) {
-                        return [`${detectLang(original)}: ${original}`, `sfx:  ${transParts.join(' ')}`];
+                        return [`${detectLang(original)}: ${original}`, `sfx: ${transParts.join(' ')}`];
                     }
                 }
             }
-            return null; // Passes through English SFX exactly as is
+            return null;
         }
 
         function processText() {
@@ -188,7 +215,6 @@
             for (let i = 0; i < lines.length; i++) {
                 let stripped = lines[i];
 
-                // Preserve structural blank lines during processing so separate bubbles aren't collapsed
                 if (!stripped) {
                     out.push("");
                     continue;
@@ -199,20 +225,24 @@
                     continue;
                 }
 
+                // Look-ahead revision check
                 let isRevision = false;
-                if (i + 1 < lines.length) {
-                    let nextLine = lines[i + 1];
-                    if (nextLine) { // Revisions must be directly consecutive!
-                        let currPrefix = getPrefix(stripped);
-                        let nextPrefix = getPrefix(nextLine);
-                        if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
+                let nextIdx = getNextActiveLineIndex(lines, i);
+                if (nextIdx !== -1) {
+                    let nextLine = lines[nextIdx];
+                    let currPrefix = getPrefix(stripped);
+                    let nextPrefix = getPrefix(nextLine);
+                    
+                    if (currPrefix && nextPrefix && currPrefix === nextPrefix) {
+                        // Revisions must share CJK characters (SFX) OR share significant text overlap (Dialogue)
+                        if (/^(SFX|KSFX|JSFX|CSFX)/i.test(currPrefix) || areLinesSimilar(stripped, nextLine)) {
                             stats.revisions++;
                             isRevision = true;
                         }
                     }
                 }
 
-                if (isRevision) continue; // Skip to keep the newer version below it
+                if (isRevision) continue; // Skip older revision
 
                 let sfxLines = convertSfx(stripped);
                 if (sfxLines) {
@@ -225,7 +255,7 @@
                 stats.kept++;
             }
 
-            // Clean Formatting Rule: Strip all blank lines, then inject ONE before each Page Marker
+            // Clean formatting: strip empty lines, then inject ONE before each Page Marker
             let compactOut = out.filter(l => l !== "");
             let finalOut = [];
             for (let j = 0; j < compactOut.length; j++) {
