@@ -17,22 +17,55 @@
             box-sizing: border-box;
         }
         .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             margin-bottom: 20px;
+        }
+        h2 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .description-box {
+            background-color: #e0e7ff;
+            color: #3730a3;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.5;
+            border-left: 4px solid #4f46e5;
         }
         .container {
             display: flex;
             gap: 20px;
             flex: 1;
             min-height: 0;
+            margin-top: 15px;
         }
         .panel {
             flex: 1;
             display: flex;
             flex-direction: column;
         }
+        
+        /* The new rich-text input area */
+        .editable-area {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid #d4d4d8;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: white;
+            overflow-y: auto;
+            white-space: pre-wrap; /* Preserves spacing */
+        }
+        
+        /* Placeholder text for the editable div */
+        .editable-area:empty:before {
+            content: attr(data-placeholder);
+            color: #a1a1aa;
+            pointer-events: none;
+        }
+        
         textarea {
             flex: 1;
             resize: none;
@@ -70,17 +103,23 @@
 
     <div class="header">
         <h2>Script Cleaner</h2>
+        <div class="description-box">
+            <strong>What this does:</strong> Automatically resolves duplicate revision lines (keeps the bottom one), 
+            converts SFX tags based on detected languages (KR/JP/CN), strips out internal staff notes (TL/PR), 
+            and formats page markers properly. <em>Colors pasted from Google Docs will remain visible here for easy reviewing.</em>
+        </div>
     </div>
 
     <div class="container">
         <div class="panel">
-            <label for="input" style="margin-bottom: 8px; font-weight: bold;">Paste Original Script here:</label>
-            <textarea id="input" placeholder="Paste from Google Docs..."></textarea>
+            <label style="margin-bottom: 8px; font-weight: bold;">Paste Original Script here:</label>
+            <!-- Changed from textarea to a contenteditable div to support rich text (colors) -->
+            <div id="input" class="editable-area" contenteditable="true" data-placeholder="Paste from Google Docs with colors intact..."></div>
         </div>
         
         <div class="panel">
-            <label for="output" style="margin-bottom: 8px; font-weight: bold;">Cleaned Output:</label>
-            <textarea id="output" readonly placeholder="Cleaned text will appear here..."></textarea>
+            <label for="output" style="margin-bottom: 8px; font-weight: bold;">Cleaned Output (Ready for Typesetting):</label>
+            <textarea id="output" readonly placeholder="Cleaned plain text will appear here..."></textarea>
         </div>
     </div>
 
@@ -142,7 +181,8 @@
         }
 
         function processText() {
-            const text = document.getElementById('input').value;
+            // Using innerText extracts plain text with correct line breaks, dropping the HTML colors
+            const text = document.getElementById('input').innerText;
             const lines = text.split(/\r?\n/);
             let out = [];
             let i = 0;
