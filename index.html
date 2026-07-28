@@ -16,8 +16,8 @@
             height: 100vh;
             box-sizing: border-box;
         }
-        .header { margin-bottom: 20px; }
-        h2 { margin-top: 0; margin-bottom: 10px; }
+        .header { margin-bottom: 15px; }
+        h2 { margin-top: 0; margin-bottom: 8px; }
         .description-box {
             background-color: #e0e7ff;
             color: #3730a3;
@@ -26,11 +26,22 @@
             font-size: 14px;
             line-height: 1.5;
             border-left: 4px solid #4f46e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .scroll-sync-toggle {
+            background: white; border: 1px solid #c7d2fe; color: #3730a3;
+            padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: bold;
+            cursor: pointer; transition: 0.15s; white-space: nowrap;
+        }
+        .scroll-sync-toggle.active {
+            background: #4f46e5; color: white; border-color: #4f46e5;
         }
         .container {
-            display: flex; gap: 20px; flex: 1; min-height: 0; margin-top: 15px;
+            display: flex; gap: 20px; flex: 1; min-height: 0; margin-top: 10px;
         }
-        .panel { flex: 1; display: flex; flex-direction: column; }
+        .panel { flex: 1; display: flex; flex-direction: column; position: relative; }
         .editable-area {
             flex: 1; padding: 15px; border: 1px solid #d4d4d8; border-radius: 8px;
             font-family: monospace; font-size: 14px; line-height: 1.5;
@@ -53,23 +64,23 @@
         .btn-secondary { background-color: #10b981; }
         .btn-secondary:hover { background-color: #059669; }
         
-        /* New Smart Review UI Styles */
+        /* Smart Review UI */
         .resolver-container {
             display: none;
             background: white;
             border: 2px solid #fbbf24;
             border-radius: 8px;
             padding: 15px;
-            margin-bottom: 15px;
-            max-height: 250px;
+            margin-bottom: 12px;
+            max-height: 220px;
             overflow-y: auto;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         .resolver-title {
-            font-weight: bold; color: #b45309; margin-bottom: 10px; font-size: 15px;
+            font-weight: bold; color: #b45309; margin-bottom: 10px; font-size: 14px;
         }
         .conflict-group {
-            margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0;
         }
         .conflict-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .conflict-label {
@@ -77,28 +88,34 @@
         }
         .toggle-btn {
             padding: 8px 12px; margin: 4px 0; border-radius: 6px; border: 2px solid #cbd5e1;
-            cursor: pointer; background: #f8fafc; color: #64748b; font-family: monospace;
-            transition: all 0.15s ease; position: relative; padding-left: 35px;
+            cursor: pointer; background: #f8fafc; color: #64748b; font-family: monospace; font-size: 13px;
+            transition: all 0.15s ease; position: relative; padding-left: 32px; text-align: left; width: 100%; box-sizing: border-box;
         }
         .toggle-btn::before {
-            content: '❌'; position: absolute; left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);
+            content: '❌'; position: absolute; left: 10px; font-size: 11px; top: 50%; transform: translateY(-50%);
         }
         .toggle-btn.active {
             background: #ecfdf5; border-color: #10b981; color: #065f46; font-weight: bold;
         }
-        .toggle-btn.active::before {
-            content: '✅';
+        .toggle-btn.active::before { content: '✅'; }
+
+        /* Highlight animation for tracking place */
+        @keyframes highlightFlash {
+            0% { background-color: #fef08a; }
+            100% { background-color: transparent; }
+        }
+        .highlighted {
+            animation: highlightFlash 1.5s ease-out;
         }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <h2>Nocti's Script Cleaner</h2>
+        <h2>Script Cleaner (Interactive & Synced)</h2>
         <div class="description-box">
-            <strong>What this does:</strong> Identifies and formats languages automatically, strips staff notes, and detects revisions. 
-            If it finds consecutive lines of the same type (like back-to-back SFX or dialogue), it groups them in a menu below so you can <strong>click to choose which lines to keep</strong>.
-            <em>If you encounter any issues, DM me~</em>
+            <span><strong>Workflow Tip:</strong> Enable Linked Scroll below to lock the input and output panels together for effortless review. Clicking review options will highlight the line in both panels.</span>
+            <button id="syncBtn" class="scroll-sync-toggle" onclick="toggleScrollSync()">🔗 Linked Scroll: OFF</button>
         </div>
     </div>
 
@@ -126,9 +143,11 @@
         ];
 
         let globalItems = [];
+        let isSyncActive = false;
 
-        // Capture EXACT clipboard data
         const inputDiv = document.getElementById('input');
+        const outputArea = document.getElementById('output');
+
         inputDiv.addEventListener('paste', (e) => {
             inputDiv.dataset.rawText = e.clipboardData.getData('text/plain');
         });
@@ -136,6 +155,32 @@
             inputDiv.dataset.rawText = inputDiv.innerText;
         });
 
+        // --- Scroll Syncing Logic ---
+        function toggleScrollSync() {
+            isSyncActive = !isSyncActive;
+            let btn = document.getElementById('syncBtn');
+            btn.classList.toggle('active', isSyncActive);
+            btn.innerText = isSyncActive ? "🔗 Linked Scroll: ON" : "🔗 Linked Scroll: OFF";
+        }
+
+        let isScrolling = false;
+        inputDiv.addEventListener('scroll', () => {
+            if (!isSyncActive || isScrolling) return;
+            isScrolling = true;
+            let percentage = inputDiv.scrollTop / (inputDiv.scrollHeight - inputDiv.clientHeight || 1);
+            outputArea.scrollTop = percentage * (outputArea.scrollHeight - outputArea.clientHeight);
+            setTimeout(() => isScrolling = false, 50);
+        });
+
+        outputArea.addEventListener('scroll', () => {
+            if (!isSyncActive || isScrolling) return;
+            isScrolling = true;
+            let percentage = outputArea.scrollTop / (outputArea.scrollHeight - outputArea.clientHeight || 1);
+            inputDiv.scrollTop = percentage * (inputDiv.scrollHeight - inputDiv.clientHeight);
+            setTimeout(() => isScrolling = false, 50);
+        });
+
+        // --- Core Script Logic ---
         function isCJK(text) { return /[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]/.test(text); }
         function detectLang(text) {
             if (/[\uac00-\ud7a3]/.test(text)) return "ksfx";
@@ -144,7 +189,6 @@
             return "osfx";
         }
 
-        // Extracts just the base symbol ("SFX", "ST", "“”", "[]") to know what type of line it is
         function getBasePrefix(line) {
             let upper = line.toUpperCase();
             if (upper.startsWith("SFX")) return "SFX";
@@ -165,7 +209,6 @@
             return l.includes("page") || l.includes(".png");
         }
 
-        // Compares words to see if two lines are just revisions of each other
         function getSimilarity(str1, str2) {
             let words1 = str1.toLowerCase().match(/\b[a-z0-9]+\b/g) || [];
             let words2 = str2.toLowerCase().match(/\b[a-z0-9]+\b/g) || [];
@@ -180,8 +223,7 @@
                     temp2.splice(idx, 1);
                 }
             }
-            let maxLen = Math.max(words1.length, words2.length);
-            return matchCount / maxLen;
+            return matchCount / Math.max(words1.length, words2.length);
         }
 
         function convertSfx(line) {
@@ -223,15 +265,13 @@
             globalItems = [];
             let currentGroup = null;
 
-            // Phase 1: Group lines by their base prefix
             for (let i = 0; i < lines.length; i++) {
                 let stripped = lines[i];
-
                 if (!stripped) continue;
 
                 if (isPage(stripped)) {
                     globalItems.push({ type: 'page', text: stripped });
-                    currentGroup = null; // break the group
+                    currentGroup = null;
                     continue;
                 }
 
@@ -247,11 +287,9 @@
                 }
             }
 
-            // Phase 2: Smart Pre-selection
             for (let item of globalItems) {
                 if (item.type === 'group' && item.lines.length > 1) {
                     for (let i = 0; i < item.lines.length - 1; i++) {
-                        // If a line is >25% similar to the NEXT line in the group, it's likely a typo revision. Turn the older one OFF.
                         if (getSimilarity(item.lines[i].text, item.lines[i+1].text) > 0.25) {
                             item.lines[i].selected = false;
                         }
@@ -263,10 +301,9 @@
             renderOutput();
         }
 
-        // Phase 3: Build the Interactive UI for groups with multiple lines
         function renderResolver() {
             let container = document.getElementById('resolver');
-            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle which lines to keep</div>';
+            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle lines (highlights position in output)</div>';
             let hasConflicts = false;
 
             for (let item of globalItems) {
@@ -285,9 +322,10 @@
                         btn.className = `toggle-btn ${lineObj.selected ? 'active' : ''}`;
                         btn.innerText = lineObj.text;
                         btn.onclick = () => {
-                            lineObj.selected = !lineObj.selected; // Toggle state
-                            renderResolver(); // Refresh buttons
-                            renderOutput();   // Live update output
+                            lineObj.selected = !lineObj.selected; 
+                            renderResolver(); 
+                            renderOutput();   
+                            highlightInOutput(lineObj.text);
                         };
                         groupDiv.appendChild(btn);
                     }
@@ -298,13 +336,12 @@
             container.style.display = hasConflicts ? 'block' : 'none';
         }
 
-        // Phase 4: Generate the final cleaned text based on what is toggled ON
         function renderOutput() {
             let out = [];
 
             for (let item of globalItems) {
                 if (item.type === 'page') {
-                    if (out.length > 0) out.push(""); // One blank line before pages
+                    if (out.length > 0) out.push(""); 
                     out.push(item.text);
                 } else if (item.type === 'group') {
                     for (let lineObj of item.lines) {
@@ -320,12 +357,29 @@
                 }
             }
 
-            document.getElementById('output').value = out.join('\n');
+            outputArea.value = out.join('\n');
+        }
+
+        // --- Highlighting Position Feature ---
+        function highlightInOutput(targetText) {
+            let text = outputArea.value;
+            let convertedSfx = convertSfx(targetText);
+            let searchTarget = convertedSfx ? convertedSfx[1] : targetText; // Match translated part if SFX
+
+            let index = text.indexOf(searchTarget);
+            if (index !== -1) {
+                outputArea.focus();
+                outputArea.setSelectionRange(index, index + searchTarget.length);
+                
+                // Calculate rough line height scroll position to bring it into view
+                let linesBefore = text.substring(0, index).split('\n').length;
+                let lineHeight = 21; // Approximate line height in pixels
+                outputArea.scrollTop = Math.max(0, (linesBefore - 4) * lineHeight);
+            }
         }
 
         function copyOutput() {
-            const output = document.getElementById('output');
-            output.select();
+            outputArea.select();
             document.execCommand('copy');
             const btn = document.querySelector('.btn-secondary');
             btn.innerText = "✓ Copied!";
