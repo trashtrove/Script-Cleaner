@@ -99,13 +99,13 @@
         }
         .toggle-btn.active::before { content: '✅'; }
 
-        /* Highlight animation for tracking place */
-        @keyframes highlightFlash {
+        /* Highlight flash effect using a temporary class */
+        @keyframes flashHighlight {
             0% { background-color: #fef08a; }
-            100% { background-color: transparent; }
+            100% { background-color: inherit; }
         }
-        .highlighted {
-            animation: highlightFlash 1.5s ease-out;
+        .flash-highlight {
+            animation: flashHighlight 1.5s ease-out;
         }
     </style>
 </head>
@@ -114,7 +114,7 @@
     <div class="header">
         <h2>Nocti's Script Cleaner</h2>
         <div class="description-box">
-            <span><strong>Workflow Tip:</strong> Enable Linked Scroll below to lock the input and output panels together for easy review. Clicking review options will highlight the line in both panels.</span>
+            <span><strong>Workflow Tip:</strong> Enable Linked Scroll below to lock panels together. Clicking review options will highlight the line on <strong>both</strong> the input and output panels.</span>
             <button id="syncBtn" class="scroll-sync-toggle" onclick="toggleScrollSync()">🔗 Linked Scroll: OFF</button>
         </div>
     </div>
@@ -303,7 +303,7 @@
 
         function renderResolver() {
             let container = document.getElementById('resolver');
-            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle lines (highlights position in output)</div>';
+            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle lines (highlights position on both sides)</div>';
             let hasConflicts = false;
 
             for (let item of globalItems) {
@@ -325,7 +325,7 @@
                             lineObj.selected = !lineObj.selected; 
                             renderResolver(); 
                             renderOutput();   
-                            highlightInOutput(lineObj.text);
+                            highlightInBothPanels(lineObj.text);
                         };
                         groupDiv.appendChild(btn);
                     }
@@ -360,21 +360,35 @@
             outputArea.value = out.join('\n');
         }
 
-        // --- Highlighting Position Feature ---
-        function highlightInOutput(targetText) {
-            let text = outputArea.value;
-            let convertedSfx = convertSfx(targetText);
-            let searchTarget = convertedSfx ? convertedSfx[1] : targetText; // Match translated part if SFX
-
-            let index = text.indexOf(searchTarget);
-            if (index !== -1) {
-                outputArea.focus();
-                outputArea.setSelectionRange(index, index + searchTarget.length);
+        // --- Dual Panel Highlighting Feature ---
+        function highlightInBothPanels(targetText) {
+            // 1. Highlight in Input Panel (contenteditable div)
+            let inputContent = inputDiv.innerText;
+            let inputIdx = inputContent.indexOf(targetText);
+            if (inputIdx !== -1) {
+                let linesBeforeInput = inputContent.substring(0, inputIdx).split('\n').length;
+                inputDiv.scrollTop = Math.max(0, (linesBeforeInput - 4) * 21);
                 
-                // Calculate rough line height scroll position to bring it into view
-                let linesBefore = text.substring(0, index).split('\n').length;
-                let lineHeight = 21; // Approximate line height in pixels
-                outputArea.scrollTop = Math.max(0, (linesBefore - 4) * lineHeight);
+                // Add temporary flash class wrapper effect or background flash on input div wrapper
+                inputDiv.classList.add('flash-highlight');
+                setTimeout(() => inputDiv.classList.remove('flash-highlight'), 1500);
+            }
+
+            // 2. Highlight in Output Panel (textarea)
+            let outputText = outputArea.value;
+            let convertedSfx = convertSfx(targetText);
+            let searchTarget = convertedSfx ? convertedSfx[1] : targetText; 
+
+            let outputIdx = outputText.indexOf(searchTarget);
+            if (outputIdx !== -1) {
+                outputArea.focus();
+                outputArea.setSelectionRange(outputIdx, outputIdx + searchTarget.length);
+                
+                let linesBeforeOutput = outputText.substring(0, outputIdx).split('\n').length;
+                outputArea.scrollTop = Math.max(0, (linesBeforeOutput - 4) * 21);
+
+                outputArea.classList.add('flash-highlight');
+                setTimeout(() => outputArea.classList.remove('flash-highlight'), 1500);
             }
         }
 
