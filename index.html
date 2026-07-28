@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanlation Script Cleaner</title>
+    <title>Nocti's Script Cleaner</title>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -99,12 +99,15 @@
         }
         .toggle-btn.active::before { content: '✅'; }
 
-        @keyframes flashHighlight {
-            0% { background-color: #fef08a; }
-            100% { background-color: transparent; }
+        /* Precise inline line highlighting animation */
+        @keyframes inlineFlash {
+            0% { background-color: #fef08a; color: #854d0e; }
+            100% { background-color: transparent; color: inherit; }
         }
-        .flash-highlight {
-            animation: flashHighlight 1.5s ease-out;
+        .inline-flash {
+            animation: inlineFlash 1.8s ease-out;
+            border-radius: 3px;
+            padding: 1px 3px;
         }
     </style>
 </head>
@@ -113,7 +116,7 @@
     <div class="header">
         <h2>Nocti's Script Cleaner</h2>
         <div class="description-box">
-            <span><strong>Workflow Tip:</strong> Enable Linked Scroll below to lock panels together. Clicking review options will highlight the line on <strong>both</strong> the input and output panels.(in theory lol)</span>
+            <span><strong>Workflow Tip:</strong> Enable Linked Scroll below to lock panels together. Clicking review options will precisely highlight the specific line on <strong>both</strong> panels.</span>
             <button id="syncBtn" class="scroll-sync-toggle" onclick="toggleScrollSync()">🔗 Linked Scroll: OFF</button>
         </div>
     </div>
@@ -300,7 +303,7 @@
 
         function renderResolver() {
             let container = document.getElementById('resolver');
-            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle lines (highlights position on both sides)</div>';
+            container.innerHTML = '<div class="resolver-title">🔍 Smart Review: Click to toggle lines (highlights specific line on both sides)</div>';
             let hasConflicts = false;
 
             for (let item of globalItems) {
@@ -357,42 +360,39 @@
             outputArea.value = out.join('\n');
         }
 
-        // --- Robust Dual Panel Highlighting ---
+        // --- Precise Line-Only Highlighting ---
         function highlightInBothPanels(targetText) {
-            // 1. Highlight in Input ContentEditable Div using Range Selection
+            // 1. Precise Selection in Input ContentEditable Div
             let walker = document.createTreeWalker(inputDiv, NodeFilter.SHOW_TEXT, null, false);
             let node;
-            let found = false;
             while (node = walker.nextNode()) {
                 let pos = node.nodeValue.indexOf(targetText);
                 if (pos !== -1) {
                     let range = document.createRange();
                     range.setStart(node, pos);
                     range.setEnd(node, pos + targetText.length);
-                    let sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
                     
-                    // Scroll into view roughly
-                    let lineCount = inputDiv.innerText.substring(0, inputDiv.innerText.indexOf(targetText)).split('\n').length;
-                    inputDiv.scrollTop = Math.max(0, (lineCount - 4) * 21);
-                    found = true;
+                    // Wrap the exact target text in a temporary styled span for a clean inline flash
+                    let span = document.createElement('span');
+                    span.className = 'inline-flash';
+                    range.surroundContents(span);
+
+                    // Scroll input pane smoothly to the element
+                    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Clean up the temporary wrapper element after the animation finishes
+                    setTimeout(() => {
+                        let parent = span.parentNode;
+                        if (parent) {
+                            parent.replaceChild(document.createTextNode(span.textContent), span);
+                            parent.normalize();
+                        }
+                    }, 1800);
                     break;
                 }
             }
-            if (!found) {
-                // Fallback text check
-                let inputIdx = inputDiv.innerText.indexOf(targetText);
-                if (inputIdx !== -1) {
-                    let linesBefore = inputDiv.innerText.substring(0, inputIdx).split('\n').length;
-                    inputDiv.scrollTop = Math.max(0, (linesBefore - 4) * 21);
-                }
-            }
 
-            inputDiv.classList.add('flash-highlight');
-            setTimeout(() => inputDiv.classList.remove('flash-highlight'), 1500);
-
-            // 2. Highlight in Output Textarea
+            // 2. Precise Selection in Output Textarea
             let outputText = outputArea.value;
             let convertedSfx = convertSfx(targetText);
             let searchTarget = convertedSfx ? convertedSfx[1] : targetText; 
@@ -404,9 +404,6 @@
                 
                 let linesBeforeOutput = outputText.substring(0, outputIdx).split('\n').length;
                 outputArea.scrollTop = Math.max(0, (linesBeforeOutput - 4) * 21);
-
-                outputArea.classList.add('flash-highlight');
-                setTimeout(() => outputArea.classList.remove('flash-highlight'), 1500);
             }
         }
 
